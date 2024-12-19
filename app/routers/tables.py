@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import aiosqlite
 import logging
 from ..internal.db import get_db
@@ -26,9 +26,11 @@ async def query_table(
     table_name: str,
     limit: int = 100,
     offset: int = 0,
+    order_by: Optional[str] = "timestamp",  # Default to timestamp
+    order: Optional[str] = "desc",  # Default to newest first
     db: aiosqlite.Connection = Depends(get_db)
 ) -> List[Dict[str, Any]]:
-    """Query a specific table with pagination."""
+    """Query a specific table with pagination and ordering."""
     # Validate table exists
     async with db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", 
@@ -40,11 +42,28 @@ async def query_table(
     # Get column names
     async with db.execute(f"PRAGMA table_info({table_name})") as cursor:
         columns = [col[1] for col in await cursor.fetchall()]
+        if order_by and order_by not in columns:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
+            )
     
-    # Query data
-    async with db.execute(
-        f"SELECT * FROM {table_name} LIMIT ? OFFSET ?",
-        (limit, offset)
-    ) as cursor:
+    # Validate order direction
+    order = order.lower()
+    if order not in ["asc", "desc"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Order must be either 'asc' or 'desc'"
+        )
+    
+    # Query data with ordering
+    query = f"""
+        SELECT * FROM {table_name}
+        {f'ORDER BY {order_by} {order.upper()}' if order_by else ''}
+        LIMIT ? OFFSET ?
+    """
+    logger.debug(f"Executing query: {query}")
+    
+    async with db.execute(query, (limit, offset)) as cursor:
         rows = await cursor.fetchall()
         return [dict(zip(columns, row)) for row in rows] 
