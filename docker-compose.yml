@@ -9,6 +9,6 @@ services:
       - "${DATA_ROOT}:/data/db"
     command: >
       sh -c "
-        /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
+        /app/.venv/bin/fastapi run --host 0.0.0.0 --port 80
       "
     restart: unless-stopped
