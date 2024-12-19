@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Dict, Any, Optional
 import aiosqlite
 import logging
@@ -26,11 +26,13 @@ async def query_table(
     table_name: str,
     limit: int = 100,
     offset: int = 0,
-    order_by: Optional[str] = "timestamp",  # Default to timestamp
-    order: Optional[str] = "desc",  # Default to newest first
+    order_by: Optional[str] = "timestamp",
+    order: Optional[str] = "desc",
+    filter_column: Optional[str] = None,
+    filter_value: Optional[str] = None,
     db: aiosqlite.Connection = Depends(get_db)
 ) -> List[Dict[str, Any]]:
-    """Query a specific table with pagination and ordering."""
+    """Query a specific table with pagination, ordering, and filtering."""
     # Validate table exists
     async with db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name=?", 
@@ -47,6 +49,11 @@ async def query_table(
                 status_code=400, 
                 detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
             )
+        if filter_column and filter_column not in columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid filter column: {filter_column}. Available columns: {columns}"
+            )
     
     # Validate order direction
     order = order.lower()
@@ -56,14 +63,24 @@ async def query_table(
             detail="Order must be either 'asc' or 'desc'"
         )
     
-    # Query data with ordering
+    # Build query with optional filter
+    where_clause = ""
+    query_params = []
+    
+    if filter_column and filter_value is not None:
+        where_clause = f"WHERE {filter_column} = ?"
+        query_params.append(filter_value)
+    
+    query_params.extend([limit, offset])
+    
     query = f"""
         SELECT * FROM {table_name}
+        {where_clause}
         {f'ORDER BY {order_by} {order.upper()}' if order_by else ''}
         LIMIT ? OFFSET ?
     """
-    logger.debug(f"Executing query: {query}")
+    logger.debug(f"Executing query: {query} with params: {query_params}")
     
-    async with db.execute(query, (limit, offset)) as cursor:
+    async with db.execute(query, query_params) as cursor:
         rows = await cursor.fetchall()
         return [dict(zip(columns, row)) for row in rows] 
