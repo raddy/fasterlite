@@ -1,6 +1,6 @@
-# uv-fastapi-example
+# fasterlite
 
-An example of a [FastAPI](https://github.com/fastapi/fastapi) application managed as a
+A fork based on the example of a [FastAPI](https://github.com/fastapi/fastapi) application managed as a
 [uv](https://github.com/astral-sh/uv) project.
 
 Based on the [multi-file example](https://fastapi.tiangolo.com/tutorial/bigger-applications/) from

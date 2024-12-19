@@ -1,23 +1,21 @@
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
+from .routers import tables
+from .config import settings
+import logging
 
-from .dependencies import get_query_token, get_token_header
-from .internal import admin
-from .routers import items, users
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-app = FastAPI(dependencies=[Depends(get_query_token)])
+app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    logger.info(f"Starting up with databases config: {settings.databases}")
+    logger.info(f"DB mount path: {settings.DB_MOUNT_PATH}")
+    logger.info(f"SQLITE_DBS: {settings.SQLITE_DBS}")
 
-app.include_router(users.router)
-app.include_router(items.router)
-app.include_router(
-    admin.router,
-    prefix="/admin",
-    tags=["admin"],
-    dependencies=[Depends(get_token_header)],
-    responses={418: {"description": "I'm a teapot"}},
-)
-
+app.include_router(tables.router)
 
 @app.get("/")
 async def root():
-    return {"message": "Hello Bigger Applications!"}
+    return {"message": "SQLite REST API Service"}
