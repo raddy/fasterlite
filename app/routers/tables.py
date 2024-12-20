@@ -10,8 +10,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 router = APIRouter(
-    prefix="/tables",
-    tags=["tables"],
     dependencies=[Depends(verify_api_key)]
 )
 
@@ -20,8 +18,11 @@ async def get_db_dependency(db_name: str):
         print(f"TABLES MODULE - Got DB connection")
         yield db
 
-@router.get("/")
-async def list_tables(db_name: str, db: aiosqlite.Connection = Depends(get_db_dependency)) -> List[str]:
+@router.get("/{db_name}")
+async def list_tables(
+    db_name: str, 
+    db: aiosqlite.Connection = Depends(get_db_dependency)
+) -> List[str]:
     """List all available tables in the database."""
     try:
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cursor:
@@ -40,15 +41,16 @@ async def list_tables(db_name: str, db: aiosqlite.Connection = Depends(get_db_de
             detail=f"Database error: {str(e)}"
         )
 
-@router.get("/{table_name}")
+@router.get("/{db_name}/{table_name}")
 async def query_table(
+    db_name: str,
     table_name: str,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     order_by: Optional[str] = "timestamp",
-    order: Optional[str] = "desc",
+    order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
     filters: Optional[str] = None,  # JSON string of column:value pairs
-    db: aiosqlite.Connection = Depends(get_db)
+    db: aiosqlite.Connection = Depends(get_db_dependency)
 ) -> List[Dict[str, Any]]:
     """Query a specific table with pagination, ordering, and filtering."""
     # Parse filters
@@ -105,4 +107,4 @@ async def query_table(
     
     async with db.execute(query, query_params) as cursor:
         rows = await cursor.fetchall()
-        return [dict(zip(columns, row)) for row in rows] 
+        return [dict(zip(columns, row)) for row in rows]
