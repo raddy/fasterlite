@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Dict, Any, Optional
 import aiosqlite
+import json
 import logging
 from ..internal.db import get_db
 from ..internal.auth import verify_api_key
@@ -28,20 +29,24 @@ async def query_table(
     offset: int = 0,
     order_by: Optional[str] = "timestamp",
     order: Optional[str] = "desc",
-    filter_column: Optional[str] = None,
-    filter_value: Optional[str] = None,
+    filters: Optional[str] = None,  # JSON string of column:value pairs
     db: aiosqlite.Connection = Depends(get_db)
 ) -> List[Dict[str, Any]]:
     """Query a specific table with pagination, ordering, and filtering."""
-    # Validate table exists
-    async with db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", 
-        (table_name,)
-    ) as cursor:
-        if not await cursor.fetchone():
-            raise HTTPException(status_code=404, detail=f"Table {table_name} not found")
+    # Parse filters
+    filter_dict = {}
+    if filters:
+        try:
+            filter_dict = json.loads(filters)
+            if not isinstance(filter_dict, dict):
+                raise ValueError("Filters must be a dictionary")
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid filters JSON format"
+            )
     
-    # Get column names
+    # Get column names and validate
     async with db.execute(f"PRAGMA table_info({table_name})") as cursor:
         columns = [col[1] for col in await cursor.fetchall()]
         if order_by and order_by not in columns:
@@ -49,27 +54,26 @@ async def query_table(
                 status_code=400, 
                 detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
             )
-        if filter_column and filter_column not in columns:
+        
+        # Validate filter columns
+        invalid_columns = [col for col in filter_dict.keys() if col not in columns]
+        if invalid_columns:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid filter column: {filter_column}. Available columns: {columns}"
+                detail=f"Invalid filter columns: {invalid_columns}. Available columns: {columns}"
             )
     
-    # Validate order direction
-    order = order.lower()
-    if order not in ["asc", "desc"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Order must be either 'asc' or 'desc'"
-        )
-    
-    # Build query with optional filter
-    where_clause = ""
+    # Build query
+    where_clauses = []
     query_params = []
     
-    if filter_column and filter_value is not None:
-        where_clause = f"WHERE {filter_column} = ?"
-        query_params.append(filter_value)
+    for col, val in filter_dict.items():
+        where_clauses.append(f"{col} = ?")
+        query_params.append(val)
+    
+    where_clause = " AND ".join(where_clauses) if where_clauses else ""
+    if where_clause:
+        where_clause = f"WHERE {where_clause}"
     
     query_params.extend([limit, offset])
     
