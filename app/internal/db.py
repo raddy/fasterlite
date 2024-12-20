@@ -8,9 +8,9 @@ logger.setLevel(logging.DEBUG)
 
 async def get_db(db_name: str):
     db_path = settings.databases[db_name]
-    logger.info(f"Database name: {db_name}")
-    logger.info(f"Database path: {db_path}")
-    logger.info(f"All available databases: {settings.databases}")
+    print(f"Database name: {db_name}")
+    print(f"Database path: {db_path}")
+    print(f"All available databases: {settings.databases}")
     
     try:
         db = await aiosqlite.connect(db_path)

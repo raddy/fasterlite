@@ -15,12 +15,30 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)]
 )
 
+async def get_db_dependency(db_name: str):
+    async for db in get_db(db_name):
+        print(f"TABLES MODULE - Got DB connection")
+        yield db
+
 @router.get("/")
-async def list_tables(db: aiosqlite.Connection = Depends(get_db)) -> List[str]:
+async def list_tables(db_name: str, db: aiosqlite.Connection = Depends(get_db_dependency)) -> List[str]:
     """List all available tables in the database."""
-    async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cursor:
-        tables = await cursor.fetchall()
-        return [table[0] for table in tables]
+    try:
+        async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cursor:
+            tables = await cursor.fetchall()
+            if not tables:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No tables found in database '{db_name}'"
+                )
+            print(f"TABLES MODULE - Found tables: {tables[0]}")
+            return [table[0] for table in tables]
+    except aiosqlite.Error as e:
+        logger.error(f"Database error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
 
 @router.get("/{table_name}")
 async def query_table(
