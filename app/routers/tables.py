@@ -50,16 +50,25 @@ async def query_table(
     order_by: Optional[str] = "timestamp",
     order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
     filters: Optional[str] = None,  # JSON string of column:value pairs
+    wallet: Optional[str] = None,
+    symbol: Optional[str] = None,
     db: aiosqlite.Connection = Depends(get_db_dependency)
 ) -> List[Dict[str, Any]]:
     """Query a specific table with pagination, ordering, and filtering."""
-    # Parse filters
+    # Initialize filter dict with direct parameters
     filter_dict = {}
+    if wallet:
+        filter_dict['wallet'] = wallet
+    if symbol:
+        filter_dict['symbol'] = symbol
+        
+    # Add any additional filters from JSON
     if filters:
         try:
-            filter_dict = json.loads(filters)
-            if not isinstance(filter_dict, dict):
+            additional_filters = json.loads(filters)
+            if not isinstance(additional_filters, dict):
                 raise ValueError("Filters must be a dictionary")
+            filter_dict.update(additional_filters)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=400,
