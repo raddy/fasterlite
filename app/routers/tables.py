@@ -49,7 +49,7 @@ async def query_table(
     offset: int = Query(0, ge=0),
     order_by: Optional[str] = "timestamp",
     order: Optional[str] = Query("desc", regex="^(asc|desc)$"),
-    filters: Optional[str] = None,  # JSON string of column:value pairs
+    filters: Optional[str] = None,
     wallet: Optional[str] = None,
     symbol: Optional[str] = None,
     db: aiosqlite.Connection = Depends(get_db_dependency)
@@ -116,4 +116,10 @@ async def query_table(
     
     async with db.execute(query, query_params) as cursor:
         rows = await cursor.fetchall()
-        return [dict(zip(columns, row)) for row in rows]
+        results = []
+        for row in rows:
+            # Create dict with table name and all columns
+            result = dict(zip(columns, row))
+            result['table'] = table_name  # Add table name to each row
+            results.append(result)
+        return results
