@@ -123,3 +123,46 @@ async def query_table(
             result['table'] = table_name  # Add table name to each row
             results.append(result)
         return results
+
+@router.get("/{db_name}/{table_name}/latest")
+async def query_latest(
+    db_name: str,
+    table_name: str,
+    order_by: Optional[str] = "symbol",
+    order: Optional[str] = Query("asc", regex="^(asc|desc)$"),
+    db: aiosqlite.Connection = Depends(get_db_dependency)
+) -> List[Dict[str, Any]]:
+    """Get all entries from the most recent timestamp in the table."""
+    
+    # Get column names first
+    async with db.execute(f"PRAGMA table_info({table_name})") as cursor:
+        columns = [col[1] for col in await cursor.fetchall()]
+        
+        # Validate order_by column if provided
+        if order_by and order_by not in columns:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
+            )
+    
+    query = f"""
+        WITH latest_ts AS (
+            SELECT MAX(timestamp) as max_ts 
+            FROM {table_name}
+        )
+        SELECT * 
+        FROM {table_name} 
+        WHERE timestamp = (SELECT max_ts FROM latest_ts)
+        {f'ORDER BY {order_by} {order.upper()}' if order_by else ''}
+    """
+    
+    logger.debug(f"Executing latest query: {query}")
+    
+    async with db.execute(query) as cursor:
+        rows = await cursor.fetchall()
+        results = []
+        for row in rows:
+            result = dict(zip(columns, row))
+            result['table'] = table_name
+            results.append(result)
+        return results
