@@ -130,6 +130,8 @@ async def query_latest(
     table_name: str,
     order_by: Optional[str] = "symbol",
     order: Optional[str] = Query("asc", regex="^(asc|desc)$"),
+    wallet: Optional[str] = None,
+    symbol: Optional[str] = None,
     db: aiosqlite.Connection = Depends(get_db_dependency)
 ) -> List[Dict[str, Any]]:
     """Get all entries from the most recent timestamp in the table."""
@@ -145,6 +147,22 @@ async def query_latest(
                 detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
             )
     
+    # Build WHERE clause for filters
+    where_clauses = []
+    query_params = []
+    
+    if wallet:
+        where_clauses.append("wallet = ?")
+        query_params.append(wallet)
+    if symbol:
+        where_clauses.append("symbol = ?")
+        query_params.append(symbol)
+    
+    # Combine with timestamp filter
+    filter_clause = " AND ".join(where_clauses)
+    if filter_clause:
+        filter_clause = f"AND {filter_clause}"
+    
     query = f"""
         WITH latest_ts AS (
             SELECT MAX(timestamp) as max_ts 
@@ -153,12 +171,13 @@ async def query_latest(
         SELECT * 
         FROM {table_name} 
         WHERE timestamp = (SELECT max_ts FROM latest_ts)
+        {filter_clause}
         {f'ORDER BY {order_by} {order.upper()}' if order_by else ''}
     """
     
-    logger.debug(f"Executing latest query: {query}")
+    logger.debug(f"Executing latest query: {query} with params: {query_params}")
     
-    async with db.execute(query) as cursor:
+    async with db.execute(query, query_params) as cursor:
         rows = await cursor.fetchall()
         results = []
         for row in rows:
