@@ -5,6 +5,7 @@ import json
 import logging
 from ..internal.db import get_db
 from ..internal.auth import verify_api_key
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -175,6 +176,76 @@ async def query_latest(
     """
     
     logger.debug(f"Executing latest query: {query} with params: {query_params}")
+    
+    async with db.execute(query, query_params) as cursor:
+        rows = await cursor.fetchall()
+        results = []
+        for row in rows:
+            result = dict(zip(columns, row))
+            result['table'] = table_name
+            results.append(result)
+        return results
+
+@router.get("/{db_name}/{table_name}/at")
+async def query_at(
+    db_name: str,
+    table_name: str,
+    timestamp: str,  # Format: "2024-12-20 05:14:44" or epoch seconds
+    order_by: Optional[str] = "symbol",
+    order: Optional[str] = Query("asc", regex="^(asc|desc)$"),
+    wallet: Optional[str] = None,
+    symbol: Optional[str] = None,
+    db: aiosqlite.Connection = Depends(get_db_dependency)
+) -> List[Dict[str, Any]]:
+    """Get entries from the closest timestamp before the specified time."""
+    
+    # Convert timestamp if it's epoch seconds
+    try:
+        # Try to parse as epoch seconds first
+        epoch = float(timestamp)
+        timestamp = datetime.fromtimestamp(epoch).strftime('%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        # If not a number, assume it's already in the correct format
+        pass
+    
+    # Rest of the function remains the same
+    async with db.execute(f"PRAGMA table_info({table_name})") as cursor:
+        columns = [col[1] for col in await cursor.fetchall()]
+        
+        if order_by and order_by not in columns:
+            logger.debug(f"Column {order_by} not found in table, skipping ordering")
+            order_by = None
+    
+    where_clauses = []
+    query_params = []
+    
+    if wallet:
+        wallets = [w.strip() for w in wallet.split(',')]
+        where_clauses.append(f"wallet IN ({','.join('?' * len(wallets))})")
+        query_params.extend(wallets)
+    if symbol:
+        where_clauses.append("symbol = ?")
+        query_params.append(symbol)
+    
+    filter_clause = " AND ".join(where_clauses)
+    if filter_clause:
+        filter_clause = f"AND {filter_clause}"
+    
+    query = f"""
+        WITH target_ts AS (
+            SELECT MAX(timestamp) as max_ts 
+            FROM {table_name}
+            WHERE timestamp <= ?
+        )
+        SELECT * 
+        FROM {table_name} 
+        WHERE timestamp = (SELECT max_ts FROM target_ts)
+        {filter_clause}
+        {f'ORDER BY {order_by} {order.upper()}' if order_by else ''}
+    """
+    
+    query_params.insert(0, timestamp)
+    logger.debug(f"Executing at-time query: {query} with params: {query_params}")
     
     async with db.execute(query, query_params) as cursor:
         rows = await cursor.fetchall()
