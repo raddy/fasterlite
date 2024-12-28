@@ -142,18 +142,17 @@ async def query_latest(
         
         # Validate order_by column if provided
         if order_by and order_by not in columns:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid order_by column: {order_by}. Available columns: {columns}"
-            )
+            logger.debug(f"Column {order_by} not found in table, skipping ordering")
+            order_by = None
     
     # Build WHERE clause for filters
     where_clauses = []
     query_params = []
     
     if wallet:
-        where_clauses.append("wallet = ?")
-        query_params.append(wallet)
+        wallets = [w.strip() for w in wallet.split(',')]
+        where_clauses.append(f"wallet IN ({','.join('?' * len(wallets))})")
+        query_params.extend(wallets)
     if symbol:
         where_clauses.append("symbol = ?")
         query_params.append(symbol)
