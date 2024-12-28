@@ -207,7 +207,8 @@ async def query_at(
     except ValueError:
         # If not a number, assume it's already in the correct format
         pass
-    
+   
+    logging.info(f"Finding data from before {timestamp}")
     # Rest of the function remains the same
     async with db.execute(f"PRAGMA table_info({table_name})") as cursor:
         columns = [col[1] for col in await cursor.fetchall()]
