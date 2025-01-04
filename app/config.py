@@ -14,9 +14,13 @@ class Settings(BaseSettings):
         dbs = {}
         for db_config in self.SQLITE_DBS.split(','):
             name, path = db_config.split(':')
-            # Replace the original path with the mounted path
-            filename = os.path.basename(path)
-            container_path = os.path.join(self.DB_MOUNT_PATH, filename)
+            # Keep the full path structure after /data/db
+            if path.startswith(self.DB_MOUNT_PATH):
+                container_path = path
+            else:
+                # For paths that don't start with mount path
+                relative_path = path.split(self.DB_MOUNT_PATH)[-1].lstrip('/')
+                container_path = os.path.join(self.DB_MOUNT_PATH, relative_path)
             dbs[name] = container_path
         return dbs
 
